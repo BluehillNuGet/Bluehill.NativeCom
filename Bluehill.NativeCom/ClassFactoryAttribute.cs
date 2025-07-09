@@ -10,7 +10,7 @@ namespace Bluehill.NativeCom;
 /// <c>DllGetClassObject</c> and <c>DllCanUnloadNow</c> functions, which are
 /// critical for the implementation of In-process COM servers.
 /// </remarks>
-[AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+[AttributeUsage(AttributeTargets.Class, Inherited = false)]
 public sealed class ClassFactoryAttribute : Attribute {
     /// <summary>
     /// Initializes a new instance of the <see cref="ClassFactoryAttribute"/> class with the specified COM class type.
