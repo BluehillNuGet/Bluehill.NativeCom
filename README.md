@@ -21,9 +21,7 @@ A package to help create native in-process COM servers (DLLs) using native AOT. 
 1. Automatically generate a factory and `DllGetClassObject` and `DllCanUnloadNow` using the `ClassFactory` attribute as follows:
     ```
     [GeneratedComClass]
-    [Guid("GUID")]
-    [ClassFactory(typeof(IInterface), typeof(Implementation))]
-    [ClassFactory(typeof(IOtherInterface), typeof(OtherImplementation))]
+    [ClassFactory(typeof(Implementation))]
     public partial class MyClassFactory : IClassFactory;
     ```
 1. Run `dotnet publish`. You will find the COM server DLL in the `native` folder of your publish folder!
