@@ -3,40 +3,28 @@
 namespace Bluehill.NativeCom;
 
 /// <summary>
-/// An attribute that specifies the interface and implementation types for a COM class factory.
+/// Specifies a COM class factory for a class.
 /// </summary>
 /// <remarks>
-/// Attaching this attribute will automatically generate <c>DllGetClassObject</c> and <c>DllCanUnloadNow</c> functions,
-/// which are essential for In-proc COM servers.
+/// Applying this attribute to a class enables the automatic generation of the
+/// <c>DllGetClassObject</c> and <c>DllCanUnloadNow</c> functions, which are
+/// critical for the implementation of In-process COM servers.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
-[UsedImplicitly]
 public sealed class ClassFactoryAttribute : Attribute {
     /// <summary>
-    /// Initializes a new instance of the <see cref="ClassFactoryAttribute"/> class,
-    /// specifying the interface and implementation types for the factory.
+    /// Initializes a new instance of the <see cref="ClassFactoryAttribute"/> class with the specified COM class type.
     /// </summary>
-    /// <param name="interfaceType">The interface type that the factory is responsible for creating.</param>
-    /// <param name="classType">The concrete implementation type that the factory will instantiate.</param>
-    public ClassFactoryAttribute(Type interfaceType, Type classType) {
-        InterfaceType = interfaceType;
-        ClassType = classType;
-    }
+    /// <param name="classType">
+    /// The <see cref="Type"/> of the COM class for which the class factory is specified.
+    /// </param>
+    public ClassFactoryAttribute(Type classType) => ClassType = classType;
 
     /// <summary>
-    /// The interface type that the factory is responsible for creating.
+    /// Gets the <see cref="Type"/> of the COM class associated with this class factory.
     /// </summary>
     /// <value>
-    /// The interface type that the factory is responsible for creating.
-    /// </value>
-    [UsedImplicitly]
-    public Type InterfaceType { get; }
-
-    /// <summary>
-    /// The concrete implementation type that the factory will instantiate.
-    /// </summary>
-    /// <value>
-    /// The concrete implementation type that the factory will instantiate.
+    /// The <see cref="Type"/> representing the COM class for which the class factory is specified.
     /// </value>
     [UsedImplicitly]
     public Type ClassType { get; }

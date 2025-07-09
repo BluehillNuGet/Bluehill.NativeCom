@@ -17,87 +17,86 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
         var value = context.SyntaxProvider.ForAttributeWithMetadataName("Bluehill.NativeCom.ClassFactoryAttribute",
             static (n, _) => n is ClassDeclarationSyntax,
             static (c, _) => ((CSharpCompilation)c.SemanticModel.Compilation).LanguageVersion >= LanguageVersion.CSharp10
-                ? ((INamedTypeSymbol)c.TargetSymbol, c.Attributes.Select(ad => ((INamedTypeSymbol?)ad.ConstructorArguments[0].Value, (INamedTypeSymbol?)ad.ConstructorArguments[1].Value)).ToArray())
-                : ((INamedTypeSymbol, (INamedTypeSymbol?, INamedTypeSymbol?)[])?)null).Collect();
+                ? ((INamedTypeSymbol)c.TargetSymbol, (INamedTypeSymbol?)c.Attributes.Select(ad => ad.ConstructorArguments[0].Value).Single())
+                : ((INamedTypeSymbol, INamedTypeSymbol?)?)null).Collect();
 
         context.RegisterSourceOutput(value, GenerateSource);
     }
 
-    private static void GenerateSource(SourceProductionContext context, ImmutableArray<(INamedTypeSymbol AttributeSymbol, (INamedTypeSymbol? InterfaceType, INamedTypeSymbol? ClassType)[] Types)?> array) {
-        if (array.All(e => e is null)) {
+    private static void GenerateSource(SourceProductionContext context, ImmutableArray<(INamedTypeSymbol, INamedTypeSymbol?)?> array) {
+        if (array.Any(e => e?.Item2 is null)) {
             context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0001", "NativeCOM", "Requires C# 10 or higher", DiagnosticSeverity.Error,
                 DiagnosticSeverity.Error, true, 0));
 
             return;
         }
 
-        if (array.Length > 1) {
-            context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0002", "NativeCOM", "ClassFactoryAttribute attached to multiple types", DiagnosticSeverity.Error,
-                DiagnosticSeverity.Error, true, 0));
+        StringBuilder outerSb = new();
 
-            return;
-        }
+        outerSb.AppendLine("using Bluehill.NativeCom;").AppendLine()
+            .AppendLine("[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]")
+            .AppendLine("internal static unsafe class Dll {")
+            .AppendLine("    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]")
+            .AppendLine("    public static volatile int Locks;").AppendLine()
+            .AppendLine("    [System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = nameof(DllGetClassObject))]")
+            .AppendLine("    private static int DllGetClassObject(Guid* rclsid, Guid* riid, void** ppv) {")
+            .Append("        ");
 
-        var (targetType, typesArray) = array.Single()!.Value;
+        foreach (var tuple in array) {
+            var (factory, target) = tuple!.Value;
 
-        if (!targetType.Interfaces.Any(i => i.ToDisplayString(FqnFormat) == "Bluehill.NativeCom.IClassFactory")) {
-            context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0003", "NativeCOM", "Class does not implement IClassFactory", DiagnosticSeverity.Error,
-                DiagnosticSeverity.Error, true, 0, location: targetType.Locations[0]));
+            if (!factory.Interfaces.Any(ad => ad.ToDisplayString(FqnFormat) == "Bluehill.NativeCom.IClassFactory")) {
+                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0002", "NativeCOM", "Class does not implement IClassFactory", DiagnosticSeverity.Error,
+                    DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
 
-            return;
-        }
-
-        if (!targetType.GetAttributes().Any(ad => ad.AttributeClass!.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute")) {
-            context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0004", "NativeCOM", "Class does not have GeneratedComClassAttribute", DiagnosticSeverity.Error,
-                DiagnosticSeverity.Error, true, 0, location: targetType.Locations[0]));
-
-            return;
-        }
-
-        StringBuilder sb = new();
-
-        if (typesArray.All(t => t.InterfaceType is not null && t.ClassType is not null)) {
-            sb.Append("namespace ").Append(targetType.ContainingNamespace.ToDisplayString(FqnFormat)).AppendLine(";").AppendLine()
-                .Append("partial class ").Append(targetType.Name).AppendLine(" {")
-                .AppendLine("    private static volatile int serverLocks;").AppendLine()
-                .AppendLine("    public static bool IsLocked => serverLocks > 0;").AppendLine()
-                .AppendLine("    public unsafe int CreateInstance(void* pUnkOuter, Guid* riid, void** ppvObject) {")
-                .Append("        ");
-
-            foreach (var tuple in typesArray) {
-                var (i, c) = tuple;
-
-                sb.Append("if (*riid == typeof(").Append(i!.ToDisplayString(FqnFormat)).AppendLine(").GUID) {")
-                    .Append("            return Bluehill.NativeCom.DllHelper.CreateInstanceHelper<").Append(i.ToDisplayString(FqnFormat)).Append(", ").Append(c!.ToDisplayString(FqnFormat)).AppendLine(">(pUnkOuter, riid, ppvObject);")
-                    .Append("        } else ");
+                continue;
             }
 
-            sb.AppendLine("{")
-                .AppendLine("            return -2147221231;")
-                .AppendLine("        }")
-                .AppendLine("    }").AppendLine()
-                .AppendLine("    public int LockServer(bool fLock) {")
-                .AppendLine("        if (fLock) {")
-                .AppendLine("            Interlocked.Increment(ref serverLocks);")
-                .AppendLine("        } else {")
-                .AppendLine("            Interlocked.Decrement(ref serverLocks);")
-                .AppendLine("        }").AppendLine()
-                .AppendLine("        return 0;")
-                .AppendLine("    }")
-                .AppendLine("}");
+            if (!factory.GetAttributes().Any(ad => ad.AttributeClass?.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute")) {
+                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0003", "NativeCOM", "Class does not have GeneratedComClassAttribute", DiagnosticSeverity.Error,
+                    DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
 
-            context.AddSource($"{targetType.ToDisplayString(FqnFormat)}.ClassFactory.g.cs", SourceText.From(sb.ToString(), Encoding.UTF8));
+                continue;
+            }
 
-            context.AddSource("Dll.g.cs", SourceText.From($$"""
-                                                            [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-                                                            internal static unsafe class Dll {
-                                                                [System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = nameof(DllGetClassObject))]
-                                                                private static int DllGetClassObject(Guid* rclsid, Guid* riid, void** ppv) => Bluehill.NativeCom.DllHelper.GetClassFactory<{{targetType.ToDisplayString(FqnFormat)}}>(rclsid, riid, ppv);
+            if (target is null) {
+                // Something went Wrong
+                throw new InvalidOperationException("This exception shouldn't be thrown");
+            }
 
-                                                                [System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = nameof(DllCanUnloadNow))]
-                                                                private static int DllCanUnloadNow() => {{targetType.ToDisplayString(FqnFormat)}}.IsLocked.GetHashCode();
-                                                            }
-                                                            """, Encoding.UTF8));
+            if (target.AllInterfaces.Any(i => i.GetAttributes().Any(ad => ad.AttributeClass?.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.Marshalling.GeneratedComInterfaceAttribute"))) {
+                StringBuilder innerSb = new();
+
+                innerSb.Append("namespace ").Append(factory.ContainingNamespace.ToDisplayString(FqnFormat)).AppendLine(";").AppendLine()
+                    .Append("partial class ").Append(factory.Name).AppendLine(" {")
+                    .Append("    public unsafe int CreateInstance(void* pUnkOuter, Guid* riid, void** ppvObject) => Bluehill.NativeCom.DllHelper.CreateInstanceHelper<")
+                    .Append(target.ToDisplayString(FqnFormat)).AppendLine(">(pUnkOuter, riid, ppvObject);").AppendLine()
+                    .AppendLine("    public int LockServer(bool fLock) {")
+                    .AppendLine("        if (fLock) {")
+                    .AppendLine("            Interlocked.Increment(ref Dll.Locks);")
+                    .AppendLine("        } else {")
+                    .AppendLine("            Interlocked.Decrement(ref Dll.Locks);")
+                    .AppendLine("        }").AppendLine()
+                    .AppendLine("        return 0;")
+                    .AppendLine("    }")
+                    .AppendLine("}");
+
+                context.AddSource($"{factory.ToDisplayString(FqnFormat)}.BHNativeCom.g.cs", SourceText.From(innerSb.ToString(), Encoding.UTF8));
+
+                outerSb.Append("if (*rclsid == typeof(").Append(target.ToDisplayString(FqnFormat)).AppendLine(").GUID) {")
+                    .Append("            return DllHelper.CreateInstanceHelper<").Append(factory.ToDisplayString(FqnFormat)).AppendLine(">(null, riid, ppv);")
+                    .Append("        } else ");
+            }
         }
+
+        outerSb.AppendLine(" {")
+            .AppendLine("            return -2147221231;")
+            .AppendLine("        }")
+            .AppendLine("    }").AppendLine()
+            .AppendLine("    [System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = nameof(DllCanUnloadNow))]")
+            .AppendLine("    private static int DllCanUnloadNow() => Locks <= 0 ? 0 : 1;")
+            .AppendLine("}");
+
+        context.AddSource("Dll.g.cs", SourceText.From(outerSb.ToString(), Encoding.UTF8));
     }
 }

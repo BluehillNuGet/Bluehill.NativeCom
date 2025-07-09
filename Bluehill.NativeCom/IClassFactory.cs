@@ -4,31 +4,26 @@ using System.Runtime.InteropServices.Marshalling;
 namespace Bluehill.NativeCom;
 
 /// <summary>
-/// Represents a COM class factory interface that provides methods for creating instances of COM objects
-/// and managing their lifetime. This interface is typically used in conjunction with the
-/// <see cref="ClassFactoryAttribute"/> and <see cref="DllHelper"/> utility methods to implement
-/// COM class factories in .NET.
+/// Represents a COM interface for creating and managing class objects.
+/// This interface provides methods to create instances of classes and
+/// to control the locking of the server.
 /// </summary>
-/// <remarks>
-/// The <c>IClassFactory</c> interface is a standard COM interface that allows clients to create
-/// instances of COM objects and control their locking state. It is identified by the GUID
-/// "00000001-0000-0000-C000-000000000046" and uses the <c>InterfaceIsIUnknown</c> interface type.
-/// </remarks>
 [GeneratedComInterface]
 [Guid("00000001-0000-0000-C000-000000000046")]
 [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 public partial interface IClassFactory {
     /// <summary>
-    /// Creates an instance of a COM object that supports the specified interface.
+    /// Creates an instance of a class object that supports the specified interface.
     /// </summary>
     /// <param name="pUnkOuter">
-    /// A pointer to the outer unknown interface for aggregation. This must be <c>null</c> as aggregation is not supported.
+    /// A pointer to the controlling IUnknown interface of the aggregate, or <c>null</c> if the object is not part of an aggregate.
     /// </param>
     /// <param name="riid">
-    /// A pointer to the interface identifier (IID) of the interface to be used to communicate with the object.
+    /// A pointer to the interface identifier (IID) of the interface to be used to communicate with the newly created object.
     /// </param>
     /// <param name="ppvObject">
-    /// A pointer to a variable that receives the interface pointer requested in <paramref name="riid"/>.
+    /// A pointer to a location that receives the interface pointer requested in <paramref name="riid"/>.
+    /// Upon successful completion, this parameter contains the requested interface pointer.
     /// </param>
     /// <returns>
     /// An HRESULT indicating success or failure. Possible values include:
@@ -39,24 +34,21 @@ public partial interface IClassFactory {
     /// <item><description><c>E_UNEXPECTED</c> if an unexpected error occurs.</description></item>
     /// </list>
     /// </returns>
-    /// <remarks>
-    /// This method is typically used to create instances of COM objects that implement a specific interface.
-    /// </remarks>
     [PreserveSig]
     unsafe int CreateInstance(void* pUnkOuter, Guid* riid, void** ppvObject);
 
     /// <summary>
-    /// Increments or decrements the lock count of the server. This method is used to control
-    /// whether the server can be unloaded from memory. When the lock count is greater than zero,
-    /// the server remains loaded in memory.
+    /// Increments or decrements the lock count of the server.
+    /// This method is used to control whether the server can be unloaded from memory.
     /// </summary>
     /// <param name="fLock">
     /// A boolean value indicating whether to increment or decrement the lock count.
-    /// Pass <c>true</c> to increment the lock count, or <c>false</c> to decrement it.
+    /// Pass <c>true</c> to increment the lock count, preventing the server from being unloaded.
+    /// Pass <c>false</c> to decrement the lock count, allowing the server to be unloaded if no other locks exist.
     /// </param>
     /// <returns>
-    /// An HRESULT value indicating the success or failure of the operation. A value of <c>S_OK</c>
-    /// indicates success, while other values indicate an error.
+    /// An HRESULT value indicating success or failure. A value of <c>S_OK</c> indicates success,
+    /// while other values indicate an error.
     /// </returns>
     [PreserveSig]
     int LockServer([MarshalAs(UnmanagedType.Bool)] bool fLock);
