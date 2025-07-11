@@ -1,4 +1,5 @@
 ﻿using JetBrains.Annotations;
+using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 
@@ -9,8 +10,11 @@ namespace Bluehill.NativeCom;
 /// This class includes utilities for creating COM instances and managing COM interfaces.
 /// </summary>
 public static unsafe class DllHelper {
-    private const int E_UNEXPECTED = unchecked((int)0x8000FFFF);
+    private const int E_INVALIDARG = unchecked((int)0x80070057);
     private const int CLASS_E_NOAGGREGATION = unchecked((int)0x80040110);
+    private const int E_UNEXPECTED = unchecked((int)0x8000FFFF);
+    private const int S_OK = 0;
+    private static readonly ConcurrentDictionary<Type, bool> ClassCache = new();
     private static readonly StrategyBasedComWrappers Sbcw = new();
 
     /// <summary>
@@ -39,13 +43,17 @@ public static unsafe class DllHelper {
     /// </returns>
     [UsedImplicitly]
     public static int CreateInstanceHelper<TClass>(void* pUnkOuter, Guid* riid, void** ppvObject) where TClass : class, new() {
+        if (ppvObject is null) {
+            return E_INVALIDARG;
+        }
+
         *ppvObject = null;
 
         if (pUnkOuter is not null) {
             return CLASS_E_NOAGGREGATION;
         }
 
-        if (typeof(TClass).CustomAttributes.All(a => a.AttributeType != typeof(GeneratedComClassAttribute))) {
+        if (!isComClass<TClass>()) {
             return E_UNEXPECTED;
         }
 
@@ -57,10 +65,17 @@ public static unsafe class DllHelper {
         }
 
         var hr = Marshal.QueryInterface(ptr1, in *riid, out var ptr2);
-        *ppvObject = hr == 0 ? ptr2.ToPointer() : null;
+
+        if (hr == S_OK) {
+            *ppvObject = ptr2.ToPointer();
+        }
 
         Marshal.Release(ptr1);
 
         return hr;
     }
+
+    private static bool isComClass<TClass>() where TClass : class, new()
+        => ClassCache.GetOrAdd(typeof(TClass),
+            _ => Attribute.GetCustomAttribute(typeof(TClass), typeof(GeneratedComClassAttribute), false) is not null);
 }

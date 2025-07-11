@@ -9,7 +9,7 @@ A package to help create native in-process COM servers (DLLs) using native AOT. 
 
 ## How to use
 1. Create a class library project targeting .NET 8 or higher.
-1. Make sure you are using C# 10 or higher. .NET 8 and higher use C# 12 and higher by default.
+1. Make sure you are using C# 11 or higher. .NET 8 and higher use C# 12 and higher by default.
 1. Add this package and [`Bluehill.NativeCom.SourceGenerator`](https://www.nuget.org/packages/Bluehill.NativeCom.SourceGenerator/) package to your project.
 1. Enable native AOT publishing and unsafe code by modifying your project file as follows:
     ```
@@ -22,7 +22,7 @@ A package to help create native in-process COM servers (DLLs) using native AOT. 
 1. Automatically generate a factory and `DllGetClassObject` and `DllCanUnloadNow` using the `ClassFactory` attribute as follows:
     ```
     [GeneratedComClass]
-    [ClassFactory(typeof(Implementation))]
+    [ClassFactory<Implementation>]
     public partial class MyClassFactory : IClassFactory;
     ```
 1. Run `dotnet publish`. You will find the COM server DLL in the `native` folder of your publish folder!

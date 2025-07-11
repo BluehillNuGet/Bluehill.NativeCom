@@ -14,10 +14,10 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
             memberOptions: SymbolDisplayMemberOptions.IncludeContainingType);
 
     public void Initialize(IncrementalGeneratorInitializationContext context) {
-        var value = context.SyntaxProvider.ForAttributeWithMetadataName("Bluehill.NativeCom.ClassFactoryAttribute",
+        var value = context.SyntaxProvider.ForAttributeWithMetadataName("Bluehill.NativeCom.ClassFactoryAttribute`1",
             static (n, _) => n is ClassDeclarationSyntax,
-            static (c, _) => ((CSharpCompilation)c.SemanticModel.Compilation).LanguageVersion >= LanguageVersion.CSharp10
-                ? ((INamedTypeSymbol)c.TargetSymbol, (INamedTypeSymbol?)c.Attributes.Select(ad => ad.ConstructorArguments[0].Value).Single())
+            static (c, _) => ((CSharpCompilation)c.SemanticModel.Compilation).LanguageVersion >= LanguageVersion.CSharp11
+                ? ((INamedTypeSymbol)c.TargetSymbol, (INamedTypeSymbol?)c.Attributes.Select(ad => ad.AttributeClass!.TypeArguments.Single()).Single())
                 : ((INamedTypeSymbol, INamedTypeSymbol?)?)null).Collect();
 
         context.RegisterSourceOutput(value, GenerateSource);
@@ -25,7 +25,7 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
 
     private static void GenerateSource(SourceProductionContext context, ImmutableArray<(INamedTypeSymbol, INamedTypeSymbol?)?> array) {
         if (array.Any(e => e?.Item2 is null)) {
-            context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0001", "NativeCOM", "Requires C# 10 or higher", DiagnosticSeverity.Error,
+            context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0001", "NativeCOM", "Requires C# 11 or higher", DiagnosticSeverity.Error,
                 DiagnosticSeverity.Error, true, 0));
 
             return;
@@ -33,7 +33,8 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
 
         StringBuilder outerSb = new();
 
-        outerSb.AppendLine("using Bluehill.NativeCom;").AppendLine()
+        outerSb.AppendLine("#if !NO_GENERATE_DLL")
+            .AppendLine("using Bluehill.NativeCom;").AppendLine()
             .AppendLine("[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]")
             .AppendLine("internal static unsafe class Dll {")
             .AppendLine("    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]")
@@ -81,7 +82,7 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
                     .AppendLine("    }")
                     .AppendLine("}");
 
-                context.AddSource($"{factory.ToDisplayString(FqnFormat)}.BHNativeCom.g.cs", SourceText.From(innerSb.ToString(), Encoding.UTF8));
+                context.AddSource($"{factory.ToDisplayString(FqnFormat)}.BHNC.g.cs", SourceText.From(innerSb.ToString(), Encoding.UTF8));
 
                 outerSb.Append("if (*rclsid == typeof(").Append(target.ToDisplayString(FqnFormat)).AppendLine(").GUID) {")
                     .Append("            return DllHelper.CreateInstanceHelper<").Append(factory.ToDisplayString(FqnFormat)).AppendLine(">(null, riid, ppv);")
@@ -95,7 +96,8 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
             .AppendLine("    }").AppendLine()
             .AppendLine("    [System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = nameof(DllCanUnloadNow))]")
             .AppendLine("    private static int DllCanUnloadNow() => Locks <= 0 ? 0 : 1;")
-            .AppendLine("}");
+            .AppendLine("}")
+            .AppendLine("#endif");
 
         context.AddSource("Dll.g.cs", SourceText.From(outerSb.ToString(), Encoding.UTF8));
     }
