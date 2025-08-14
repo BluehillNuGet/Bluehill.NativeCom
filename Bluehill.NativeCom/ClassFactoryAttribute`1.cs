@@ -1,6 +1,4 @@
-﻿using JetBrains.Annotations;
-
-namespace Bluehill.NativeCom;
+﻿namespace Bluehill.NativeCom;
 
 /// <summary>
 /// Specifies a COM class factory for a class.
@@ -15,5 +13,4 @@ namespace Bluehill.NativeCom;
 /// critical for the implementation of In-process COM servers.
 /// </remarks>
 [AttributeUsage(AttributeTargets.Class, Inherited = false)]
-[UsedImplicitly]
 public sealed class ClassFactoryAttribute<TClass> : Attribute where TClass : class, new();

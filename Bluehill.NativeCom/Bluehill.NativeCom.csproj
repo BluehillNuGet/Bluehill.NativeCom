@@ -16,7 +16,4 @@
       <PackagePath>\</PackagePath>
     </None>
   </ItemGroup>
-  <ItemGroup>
-    <PackageReference Include="JetBrains.Annotations" PrivateAssets="all" />
-  </ItemGroup>
 </Project>

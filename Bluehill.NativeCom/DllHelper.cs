@@ -1,5 +1,4 @@
-﻿using JetBrains.Annotations;
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.Marshalling;
 
@@ -41,7 +40,6 @@ public static unsafe class DllHelper {
     /// <item><description><c>E_UNEXPECTED</c> if the interface or class is not properly marked or an unexpected error occurs.</description></item>
     /// </list>
     /// </returns>
-    [UsedImplicitly]
     public static int CreateInstanceHelper<TClass>(void* pUnkOuter, Guid* riid, void** ppvObject) where TClass : class, new() {
         if (ppvObject is null) {
             return E_INVALIDARG;
