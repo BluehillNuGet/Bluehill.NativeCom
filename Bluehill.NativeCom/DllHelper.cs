@@ -9,10 +9,12 @@ namespace Bluehill.NativeCom;
 /// This class includes utilities for creating COM instances and managing COM interfaces.
 /// </summary>
 public static unsafe class DllHelper {
-    private const int E_INVALIDARG = unchecked((int)0x80070057);
+    // ReSharper disable InconsistentNaming
+    private const int E_POINTER = unchecked((int)0x80004003);
     private const int CLASS_E_NOAGGREGATION = unchecked((int)0x80040110);
     private const int E_UNEXPECTED = unchecked((int)0x8000FFFF);
     private const int S_OK = 0;
+    // ReSharper restore InconsistentNaming
     private static readonly ConcurrentDictionary<Type, bool> ClassCache = new();
     private static readonly StrategyBasedComWrappers Sbcw = new();
 
@@ -42,7 +44,7 @@ public static unsafe class DllHelper {
     /// </returns>
     public static int CreateInstanceHelper<TClass>(void* pUnkOuter, Guid* riid, void** ppvObject) where TClass : class, new() {
         if (ppvObject is null) {
-            return E_INVALIDARG;
+            return E_POINTER;
         }
 
         *ppvObject = null;
@@ -51,7 +53,7 @@ public static unsafe class DllHelper {
             return CLASS_E_NOAGGREGATION;
         }
 
-        if (!isComClass<TClass>()) {
+        if (!IsComClass<TClass>()) {
             return E_UNEXPECTED;
         }
 
@@ -73,7 +75,7 @@ public static unsafe class DllHelper {
         return hr;
     }
 
-    private static bool isComClass<TClass>() where TClass : class, new()
+    private static bool IsComClass<TClass>() where TClass : class, new()
         => ClassCache.GetOrAdd(typeof(TClass),
             _ => Attribute.GetCustomAttribute(typeof(TClass), typeof(GeneratedComClassAttribute), false) is not null);
 }
