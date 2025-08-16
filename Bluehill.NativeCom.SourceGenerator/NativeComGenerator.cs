@@ -46,44 +46,43 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
 
             if (!factory.GetAttributes().Any(ad
                     => ad.AttributeClass?.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute")) {
-                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0002", "NativeCOM", "Class does not have GeneratedComClassAttribute",
+                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0002", "NativeCOM", "Factory class does not have GeneratedComClassAttribute",
                     DiagnosticSeverity.Error, DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
 
                 return;
             }
 
-            if (target is null) {
-                // Something went Wrong
-                throw new InvalidOperationException("This exception shouldn't be thrown");
+            if (!target.GetAttributes().Any(ad
+                    => ad.AttributeClass?.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute")) {
+                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0003", "NativeCOM", "Target class does not have GeneratedComClassAttribute",
+                    DiagnosticSeverity.Error, DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
+
+                return;
             }
 
-            if (target.AllInterfaces.Any(i => i.GetAttributes().Any(ad
-                    => ad.AttributeClass?.ToDisplayString(FqnFormat)
-                    == "System.Runtime.InteropServices.Marshalling.GeneratedComInterfaceAttribute"))) {
-                StringBuilder innerSb = new();
+            StringBuilder innerSb = new();
 
-                innerSb.Append("namespace ").Append(factory.ContainingNamespace.ToDisplayString(FqnFormat)).AppendLine(";").AppendLine()
-                    .Append("partial class ").Append(factory.Name).AppendLine(" {")
-                    .AppendLine("    public unsafe int CreateInstance(void* pUnkOuter, Guid* riid, void** ppvObject)")
-                    .Append("        => Bluehill.NativeCom.DllHelper.CreateInstanceHelper<").Append(target.ToDisplayString(FqnFormat))
-                    .AppendLine(">(pUnkOuter, riid, ppvObject);").AppendLine()
-                    .AppendLine("    public int LockServer(bool fLock) {")
-                    .AppendLine("        if (fLock) {")
-                    .AppendLine("            Interlocked.Increment(ref Dll.Locks);")
-                    .AppendLine("        } else {")
-                    .AppendLine("            Interlocked.Decrement(ref Dll.Locks);")
-                    .AppendLine("        }").AppendLine()
-                    .AppendLine("        return 0;")
-                    .AppendLine("    }")
-                    .AppendLine("}");
+            innerSb.Append("namespace ").Append(factory.ContainingNamespace.ToDisplayString(FqnFormat)).AppendLine(";").AppendLine()
+                .Append("partial class ").Append(factory.Name).AppendLine(" {")
+                .AppendLine("    public unsafe int CreateInstance(void* pUnkOuter, Guid* riid, void** ppvObject)")
+                .Append("        => Bluehill.NativeCom.DllHelper.CreateInstanceHelper<").Append(target.ToDisplayString(FqnFormat))
+                .AppendLine(">(pUnkOuter, riid, ppvObject);").AppendLine()
+                .AppendLine("    public int LockServer(bool fLock) {")
+                .AppendLine("        if (fLock) {")
+                .AppendLine("            Interlocked.Increment(ref Dll.Locks);")
+                .AppendLine("        } else {")
+                .AppendLine("            Interlocked.Decrement(ref Dll.Locks);")
+                .AppendLine("        }").AppendLine()
+                .AppendLine("        return 0;")
+                .AppendLine("    }")
+                .AppendLine("}");
 
-                context.AddSource($"{factory.ToDisplayString(FqnFormat)}.BHNC.g.cs", SourceText.From(innerSb.ToString(), Encoding.UTF8));
+            context.AddSource($"{factory.ToDisplayString(FqnFormat)}.BHNC.g.cs", SourceText.From(innerSb.ToString(), Encoding.UTF8));
 
-                outerSb.Append("if (*rclsid == typeof(").Append(target.ToDisplayString(FqnFormat)).AppendLine(").GUID) {")
-                    .Append("            return DllHelper.CreateInstanceHelper<").Append(factory.ToDisplayString(FqnFormat))
-                    .AppendLine(">(null, riid, ppv);")
-                    .Append("        } else ");
-            }
+            outerSb.Append("if (*rclsid == typeof(").Append(target.ToDisplayString(FqnFormat)).AppendLine(").GUID) {")
+                .Append("            return DllHelper.CreateInstanceHelper<").Append(factory.ToDisplayString(FqnFormat))
+                .AppendLine(">(null, riid, ppv);")
+                .Append("        } else ");
         }
 
         outerSb.AppendLine("{")
