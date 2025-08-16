@@ -6,3 +6,4 @@
 using System.Diagnostics.CodeAnalysis;
 
 [assembly: SuppressMessage("StyleCop.CSharp.NamingRules", "SA1310:Field names should not contain underscore", Justification = "<보류 중>", Scope = "member", Target = "~T:Bluehill.NativeCom.DllHelper")]
+[assembly: SuppressMessage("Major Code Smell", "S2326:Unused type parameters should be removed", Justification = "<보류 중>", Scope = "member", Target = "~T:Bluehill.NativeCom.ClassFactoryAttribute`1")]
