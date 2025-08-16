@@ -1,5 +1,4 @@
 ﻿using Microsoft.CodeAnalysis;
-using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using System.Collections.Immutable;
@@ -9,28 +8,20 @@ namespace Bluehill.NativeCom.SourceGenerator;
 
 [Generator(LanguageNames.CSharp)]
 public sealed class NativeComGenerator : IIncrementalGenerator {
-    private static readonly SymbolDisplayFormat FqnFormat
-        = new(typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
-            memberOptions: SymbolDisplayMemberOptions.IncludeContainingType);
+    private static readonly SymbolDisplayFormat FqnFormat = new(
+        typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
+        memberOptions: SymbolDisplayMemberOptions.IncludeContainingType);
 
     public void Initialize(IncrementalGeneratorInitializationContext context) {
         var value = context.SyntaxProvider.ForAttributeWithMetadataName("Bluehill.NativeCom.ClassFactoryAttribute`1",
             static (n, _) => n is ClassDeclarationSyntax,
-            static (c, _) => ((CSharpCompilation)c.SemanticModel.Compilation).LanguageVersion >= LanguageVersion.CSharp11
-                ? ((INamedTypeSymbol)c.TargetSymbol, (INamedTypeSymbol?)c.Attributes.Select(ad => ad.AttributeClass!.TypeArguments.Single()).Single())
-                : ((INamedTypeSymbol, INamedTypeSymbol?)?)null).Collect();
+            static (c, _) => ((INamedTypeSymbol)c.TargetSymbol,
+                              (INamedTypeSymbol)c.Attributes.Select(static ad => ad.AttributeClass!.TypeArguments.Single()).Single())).Collect();
 
         context.RegisterSourceOutput(value, GenerateSource);
     }
 
-    private static void GenerateSource(SourceProductionContext context, ImmutableArray<(INamedTypeSymbol, INamedTypeSymbol?)?> array) {
-        if (array.Any(e => e?.Item2 is null)) {
-            context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0001", "NativeCOM", "Requires C# 11 or higher", DiagnosticSeverity.Error,
-                DiagnosticSeverity.Error, true, 0));
-
-            return;
-        }
-
+    private static void GenerateSource(SourceProductionContext context, ImmutableArray<(INamedTypeSymbol, INamedTypeSymbol)> array) {
         StringBuilder outerSb = new();
 
         outerSb.AppendLine("#if !NO_GENERATE_DLL")
@@ -44,20 +35,21 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
             .Append("        ");
 
         foreach (var tuple in array) {
-            var (factory, target) = tuple!.Value;
+            var (factory, target) = tuple;
 
             if (!factory.Interfaces.Any(ad => ad.ToDisplayString(FqnFormat) == "Bluehill.NativeCom.IClassFactory")) {
-                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0002", "NativeCOM", "Class does not implement IClassFactory", DiagnosticSeverity.Error,
-                    DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
+                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0001", "NativeCOM", "Class does not implement IClassFactory",
+                    DiagnosticSeverity.Error, DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
 
-                continue;
+                return;
             }
 
-            if (!factory.GetAttributes().Any(ad => ad.AttributeClass?.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute")) {
-                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0003", "NativeCOM", "Class does not have GeneratedComClassAttribute", DiagnosticSeverity.Error,
-                    DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
+            if (!factory.GetAttributes().Any(ad
+                    => ad.AttributeClass?.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute")) {
+                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0002", "NativeCOM", "Class does not have GeneratedComClassAttribute",
+                    DiagnosticSeverity.Error, DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
 
-                continue;
+                return;
             }
 
             if (target is null) {
@@ -65,13 +57,16 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
                 throw new InvalidOperationException("This exception shouldn't be thrown");
             }
 
-            if (target.AllInterfaces.Any(i => i.GetAttributes().Any(ad => ad.AttributeClass?.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.Marshalling.GeneratedComInterfaceAttribute"))) {
+            if (target.AllInterfaces.Any(i => i.GetAttributes().Any(ad
+                    => ad.AttributeClass?.ToDisplayString(FqnFormat)
+                    == "System.Runtime.InteropServices.Marshalling.GeneratedComInterfaceAttribute"))) {
                 StringBuilder innerSb = new();
 
                 innerSb.Append("namespace ").Append(factory.ContainingNamespace.ToDisplayString(FqnFormat)).AppendLine(";").AppendLine()
                     .Append("partial class ").Append(factory.Name).AppendLine(" {")
-                    .Append("    public unsafe int CreateInstance(void* pUnkOuter, Guid* riid, void** ppvObject) => Bluehill.NativeCom.DllHelper.CreateInstanceHelper<")
-                    .Append(target.ToDisplayString(FqnFormat)).AppendLine(">(pUnkOuter, riid, ppvObject);").AppendLine()
+                    .AppendLine("    public unsafe int CreateInstance(void* pUnkOuter, Guid* riid, void** ppvObject)")
+                    .Append("        => Bluehill.NativeCom.DllHelper.CreateInstanceHelper<").Append(target.ToDisplayString(FqnFormat))
+                    .AppendLine(">(pUnkOuter, riid, ppvObject);").AppendLine()
                     .AppendLine("    public int LockServer(bool fLock) {")
                     .AppendLine("        if (fLock) {")
                     .AppendLine("            Interlocked.Increment(ref Dll.Locks);")
@@ -85,12 +80,13 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
                 context.AddSource($"{factory.ToDisplayString(FqnFormat)}.BHNC.g.cs", SourceText.From(innerSb.ToString(), Encoding.UTF8));
 
                 outerSb.Append("if (*rclsid == typeof(").Append(target.ToDisplayString(FqnFormat)).AppendLine(").GUID) {")
-                    .Append("            return DllHelper.CreateInstanceHelper<").Append(factory.ToDisplayString(FqnFormat)).AppendLine(">(null, riid, ppv);")
+                    .Append("            return DllHelper.CreateInstanceHelper<").Append(factory.ToDisplayString(FqnFormat))
+                    .AppendLine(">(null, riid, ppv);")
                     .Append("        } else ");
             }
         }
 
-        outerSb.AppendLine(" {")
+        outerSb.AppendLine("{")
             .AppendLine("            return -2147221231;")
             .AppendLine("        }")
             .AppendLine("    }").AppendLine()
