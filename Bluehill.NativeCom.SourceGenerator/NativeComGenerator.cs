@@ -24,11 +24,13 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
     private static void GenerateSource(SourceProductionContext context, ImmutableArray<(INamedTypeSymbol, INamedTypeSymbol)> array) {
         StringBuilder dllSb = new();
 
+        const string editorBrowsableNever
+            = "[global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]";
+
         dllSb.AppendLine("#if !NO_GENERATE_DLL")
-            .AppendLine("using Bluehill.NativeCom;").AppendLine()
-            .AppendLine("[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]")
+            .AppendLine(editorBrowsableNever)
             .AppendLine("internal static unsafe class Dll {")
-            .AppendLine("    [System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]")
+            .AppendLine($"    {editorBrowsableNever}")
             .AppendLine("    public static volatile int Locks;").AppendLine();
 
         StringBuilder clsidSb = new();
@@ -84,20 +86,21 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
                 .Append(commaZeroX).Append(guid13).Append(commaZeroX).Append(guid14).Append(commaZeroX).Append(guid15).Append(commaZeroX)
                 .Append(guid16).Append("), ").Append(i).AppendLine(" },");
 
-            helperSb.Append("        &DllHelper.CreateInstanceHelper<").Append(factory.ToDisplayString(FqnFormat)).AppendLine(">,");
+            helperSb.Append("        &global::Bluehill.NativeCom.DllHelper.CreateInstanceHelper<").Append(factory.ToDisplayString(FqnFormat))
+                .AppendLine(">,");
 
             StringBuilder cfSb = new();
 
             cfSb.Append("namespace ").Append(factory.ContainingNamespace.ToDisplayString(FqnFormat)).AppendLine(";").AppendLine()
                 .Append("partial class ").Append(factory.Name).AppendLine(" {")
-                .AppendLine("    public unsafe int CreateInstance(void* pUnkOuter, Guid* riid, void** ppvObject)")
-                .Append("        => Bluehill.NativeCom.DllHelper.CreateInstanceHelper<").Append(target.ToDisplayString(FqnFormat))
+                .AppendLine("    public unsafe int CreateInstance(void* pUnkOuter, global::System.Guid* riid, void** ppvObject)")
+                .Append("        => global::Bluehill.NativeCom.DllHelper.CreateInstanceHelper<").Append(target.ToDisplayString(FqnFormat))
                 .AppendLine(">(pUnkOuter, riid, ppvObject);").AppendLine()
                 .AppendLine("    public int LockServer(bool fLock) {")
                 .AppendLine("        if (fLock) {")
-                .AppendLine("            Interlocked.Increment(ref Dll.Locks);")
+                .AppendLine("            global::System.Threading.Interlocked.Increment(ref Dll.Locks);")
                 .AppendLine("        } else {")
-                .AppendLine("            Interlocked.Decrement(ref Dll.Locks);")
+                .AppendLine("            global::System.Threading.Interlocked.Decrement(ref Dll.Locks);")
                 .AppendLine("        }").AppendLine()
                 .AppendLine("        return 0;")
                 .AppendLine("    }")
@@ -106,16 +109,16 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
             context.AddSource($"{factory.ToDisplayString(FqnFormat)}.BHNC.g.cs", SourceText.From(cfSb.ToString(), Encoding.UTF8));
         }
 
-        dllSb.AppendLine("    private static readonly Dictionary<Guid, int> Clsids = new() {")
+        dllSb.AppendLine("    private static readonly global::System.Collections.Generic.Dictionary<global::System.Guid, int> Clsids = new() {")
             .Append(clsidSb)
             .AppendLine("    };").AppendLine()
-            .AppendLine("    private static readonly delegate*<void*, Guid*, void**, int>[] Helpers = [")
+            .AppendLine("    private static readonly delegate*<void*, global::System.Guid*, void**, int>[] Helpers = [")
             .Append(helperSb)
             .AppendLine("    ];").AppendLine()
-            .AppendLine("    [System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = nameof(DllGetClassObject))]")
-            .AppendLine("    private static int DllGetClassObject(Guid* rclsid, Guid* riid, void** ppv)")
+            .AppendLine("    [global::System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = nameof(DllGetClassObject))]")
+            .AppendLine("    private static int DllGetClassObject(global::System.Guid* rclsid, global::System.Guid* riid, void** ppv)")
             .AppendLine("        => Clsids.TryGetValue(*rclsid, out var index) ? Helpers[index](null, riid, ppv) : -2147221231;").AppendLine()
-            .AppendLine("    [System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = nameof(DllCanUnloadNow))]")
+            .AppendLine("    [global::System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = nameof(DllCanUnloadNow))]")
             .AppendLine("    private static int DllCanUnloadNow() => Locks <= 0 ? 0 : 1;")
             .AppendLine("};")
             .AppendLine("#endif");
