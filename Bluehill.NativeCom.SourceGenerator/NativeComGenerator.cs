@@ -12,43 +12,57 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
         typeQualificationStyle: SymbolDisplayTypeQualificationStyle.NameAndContainingTypesAndNamespaces,
         memberOptions: SymbolDisplayMemberOptions.IncludeContainingType);
 
+    private static readonly DiagnosticDescriptor NativeCom0001 = new("NATIVECOM0001", "Couldn't be found required type", "'{0}' couldn't be found",
+        "NativeCOM", DiagnosticSeverity.Error, true);
+
     public void Initialize(IncrementalGeneratorInitializationContext context) {
         var value = context.SyntaxProvider.ForAttributeWithMetadataName("Bluehill.NativeCom.ClassFactoryAttribute`1",
-            static (n, _) => n is ClassDeclarationSyntax,
-            static (c, _) => ((INamedTypeSymbol)c.TargetSymbol,
-                              (INamedTypeSymbol)c.Attributes.Select(static ad => ad.AttributeClass!.TypeArguments.Single()).Single())).Collect();
+                static (n, _) => n is ClassDeclarationSyntax,
+                static (c, _) => ((INamedTypeSymbol)c.TargetSymbol,
+                                  (INamedTypeSymbol)c.Attributes.Select(static ad => ad.AttributeClass!.TypeArguments.Single()).Single()))
+            .Combine(context.CompilationProvider).Collect();
 
         context.RegisterSourceOutput(value, GenerateSource);
     }
 
-    private static void GenerateSource(SourceProductionContext context, ImmutableArray<(INamedTypeSymbol, INamedTypeSymbol)> array) {
-        StringBuilder dllSb = new();
-
-        const string editorBrowsableNever
-            = "[global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]";
-
-        dllSb.AppendLine("#if !NO_GENERATE_DLL")
-            .AppendLine(editorBrowsableNever)
-            .AppendLine("internal static unsafe class Dll {")
-            .AppendLine($"    {editorBrowsableNever}")
-            .AppendLine("    public static volatile int Locks;").AppendLine();
-
+    private static void GenerateSource(SourceProductionContext context, ImmutableArray<((INamedTypeSymbol, INamedTypeSymbol), Compilation)> array) {
         StringBuilder clsidSb = new();
         StringBuilder helperSb = new();
+        INamedTypeSymbol? icfSymbol = null;
+        INamedTypeSymbol? gccaSymbol = null;
+        INamedTypeSymbol? gaaSymbol = null;
 
-        for (var i = 0; i < array.Length; i++) {
-            var (factory, target) = array[i];
+        for (var index = 0; index < array.Length; index++) {
+            var (innerTuple, compilation) = array[index];
+            var (factory, target) = innerTuple;
 
-            if (!factory.Interfaces.Any(static ad => ad.ToDisplayString(FqnFormat) == "Bluehill.NativeCom.IClassFactory")) {
-                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0001", "NativeCOM", "Class does not implement IClassFactory",
+            const string icf = "Bluehill.NativeCom.IClassFactory";
+            icfSymbol ??= compilation.GetTypeByMetadataName(icf);
+
+            if (icfSymbol is null) {
+                context.ReportDiagnostic(Diagnostic.Create(NativeCom0001, factory.Locations[0], icf));
+
+                return;
+            }
+
+            if (!factory.Interfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, icfSymbol))) {
+                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0002", "NativeCOM", "Factory class does not implement IClassFactory",
                     DiagnosticSeverity.Error, DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
 
                 return;
             }
 
-            if (!factory.GetAttributes().Any(static ad
-                    => ad.AttributeClass?.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute")) {
-                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0002", "NativeCOM", "Factory class does not have GeneratedComClassAttribute",
+            const string gcca = "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute";
+            gccaSymbol ??= compilation.GetTypeByMetadataName(gcca);
+
+            if (gccaSymbol is null) {
+                context.ReportDiagnostic(Diagnostic.Create(NativeCom0001, factory.Locations[0], gcca));
+
+                return;
+            }
+
+            if (!factory.GetAttributes().Any(ad => SymbolEqualityComparer.Default.Equals(ad.AttributeClass, gccaSymbol))) {
+                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0003", "NativeCOM", "Factory class does not have GeneratedComClassAttribute",
                     DiagnosticSeverity.Error, DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
 
                 return;
@@ -56,16 +70,33 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
 
             var ta = target.GetAttributes();
 
-            if (!ta.Any(static ad
-                    => ad.AttributeClass?.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute")) {
-                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0003", "NativeCOM", "Target class does not have GeneratedComClassAttribute",
+            if (!ta.Any(ad => SymbolEqualityComparer.Default.Equals(ad.AttributeClass, gccaSymbol))) {
+                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0004", "NativeCOM", "Target class does not have GeneratedComClassAttribute",
                     DiagnosticSeverity.Error, DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
 
                 return;
             }
 
-            var guidArray = ta.Single(ad => ad.AttributeClass?.ToDisplayString(FqnFormat) == "System.Runtime.InteropServices.GuidAttribute")
-                .ConstructorArguments.Single().Value!.ToString().Split('-');
+            const string gaa = "System.Runtime.InteropServices.GuidAttribute";
+            gaaSymbol ??= compilation.GetTypeByMetadataName(gaa);
+
+            if (gaaSymbol is null) {
+                context.ReportDiagnostic(Diagnostic.Create(NativeCom0001, factory.Locations[0], gaa));
+
+                return;
+            }
+
+            var ga = ta.SingleOrDefault(ad => SymbolEqualityComparer.Default.Equals(ad.AttributeClass, gaaSymbol));
+
+            if (ga is null) {
+                context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0005", "NativeCOM", "Target class does not have GuidAttribute",
+                    DiagnosticSeverity.Error, DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
+
+                return;
+            }
+
+            var guidArray = ga.ConstructorArguments.Single().Value!
+                .ToString().Split('-');
 
             var guid4 = guidArray[0];
             var guid6 = guidArray[1];
@@ -84,9 +115,9 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
             clsidSb.Append("        { new(0x").Append(guid4).Append(commaZeroX).Append(guid6).Append(commaZeroX).Append(guid8).Append(commaZeroX)
                 .Append(guid9).Append(commaZeroX).Append(guid10).Append(commaZeroX).Append(guid11).Append(commaZeroX).Append(guid12)
                 .Append(commaZeroX).Append(guid13).Append(commaZeroX).Append(guid14).Append(commaZeroX).Append(guid15).Append(commaZeroX)
-                .Append(guid16).Append("), ").Append(i).AppendLine(" },");
+                .Append(guid16).Append("), ").Append(index).AppendLine(" },");
 
-            helperSb.Append("        &global::Bluehill.NativeCom.DllHelper.CreateInstanceHelper<").Append(factory.ToDisplayString(FqnFormat))
+            helperSb.Append("        &global::Bluehill.NativeCom.DllHelper.CreateInstanceHelper<global::").Append(factory.ToDisplayString(FqnFormat))
                 .AppendLine(">,");
 
             StringBuilder cfSb = new();
@@ -94,8 +125,9 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
             cfSb.Append("namespace ").Append(factory.ContainingNamespace.ToDisplayString(FqnFormat)).AppendLine(";").AppendLine()
                 .Append("partial class ").Append(factory.Name).AppendLine(" {")
                 .AppendLine("    public unsafe int CreateInstance(void* pUnkOuter, global::System.Guid* riid, void** ppvObject)")
-                .Append("        => global::Bluehill.NativeCom.DllHelper.CreateInstanceHelper<").Append(target.ToDisplayString(FqnFormat))
+                .Append("        => global::Bluehill.NativeCom.DllHelper.CreateInstanceHelper<global::").Append(target.ToDisplayString(FqnFormat))
                 .AppendLine(">(pUnkOuter, riid, ppvObject);").AppendLine()
+                .AppendLine("#if !NO_GENERATE_DLL_ENTRYPOINT_AND_LOCKSERVER")
                 .AppendLine("    public int LockServer(bool fLock) {")
                 .AppendLine("        if (fLock) {")
                 .AppendLine("            global::System.Threading.Interlocked.Increment(ref Dll.Locks);")
@@ -104,12 +136,23 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
                 .AppendLine("        }").AppendLine()
                 .AppendLine("        return 0;")
                 .AppendLine("    }")
+                .AppendLine("#endif")
                 .AppendLine("}");
 
             context.AddSource($"{factory.ToDisplayString(FqnFormat)}.BHNC.g.cs", SourceText.From(cfSb.ToString(), Encoding.UTF8));
         }
 
-        dllSb.AppendLine("    private static readonly global::System.Collections.Generic.Dictionary<global::System.Guid, int> Clsids = new() {")
+        StringBuilder dllSb = new();
+
+        const string editorBrowsableNever
+            = "[global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]";
+
+        dllSb.AppendLine("#if !NO_GENERATE_DLL_ENTRYPOINT_AND_LOCKSERVER")
+            .AppendLine(editorBrowsableNever)
+            .AppendLine("internal static unsafe class Dll {")
+            .AppendLine($"    {editorBrowsableNever}")
+            .AppendLine("    public static volatile int Locks;").AppendLine()
+            .AppendLine("    private static readonly global::System.Collections.Generic.Dictionary<global::System.Guid, int> Clsids = new() {")
             .Append(clsidSb)
             .AppendLine("    };").AppendLine()
             .AppendLine("    private static readonly delegate*<void*, global::System.Guid*, void**, int>[] Helpers = [")

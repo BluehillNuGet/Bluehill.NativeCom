@@ -106,5 +106,5 @@ public static unsafe class DllHelper {
     // Checks whether TClass is decorated with GeneratedComClassAttribute, caching the result for performance.
     private static bool IsComClass<TClass>() where TClass : class, new()
         => ClassCache.GetOrAdd(typeof(TClass),
-            _ => Attribute.GetCustomAttribute(typeof(TClass), typeof(GeneratedComClassAttribute), false) is not null);
+            static _ => Attribute.GetCustomAttribute(typeof(TClass), typeof(GeneratedComClassAttribute), false) is not null);
 }
