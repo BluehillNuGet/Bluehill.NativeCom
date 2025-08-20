@@ -35,57 +35,63 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
                 static (n, _) => n is ClassDeclarationSyntax,
                 static (c, _) => ((INamedTypeSymbol)c.TargetSymbol,
                                   (INamedTypeSymbol)c.Attributes.Select(static ad => ad.AttributeClass!.TypeArguments.Single()).Single()))
-            // Pair with the Compilation to resolve well-known types by metadata name during generation.
-            .Combine(context.CompilationProvider).Collect();
+            .Collect();
 
         // Register source output callback invoked when tracked inputs change.
-        context.RegisterSourceOutput(value, GenerateSource);
+        // Pair with the Compilation to resolve well-known types by metadata name during generation.
+        context.RegisterSourceOutput(context.CompilationProvider.Combine(value), GenerateSource);
     }
 
     /// <summary>
     /// Generates partial factory implementations and an optional hidden Dll helper with COM exports.
     /// </summary>
-    private static void GenerateSource(SourceProductionContext context, ImmutableArray<((INamedTypeSymbol, INamedTypeSymbol), Compilation)> array) {
+    private static void GenerateSource(SourceProductionContext context, (Compilation, ImmutableArray<(INamedTypeSymbol, INamedTypeSymbol)>) tuple) {
+        var (compilation, array) = tuple;
+
+        // Resolve IClassFactory by metadata name once per-compilation.
+        const string icf = "Bluehill.NativeCom.IClassFactory";
+        var icfSymbol = compilation.GetTypeByMetadataName(icf);
+
+        if (icfSymbol is null) {
+            // Cannot proceed without IClassFactory.
+            context.ReportDiagnostic(Diagnostic.Create(NativeCom0001, null, icf));
+
+            return;
+        }
+
+        // Resolve GeneratedComClassAttribute for validation of both factory and target types.
+        const string gcca = "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute";
+        var gccaSymbol = compilation.GetTypeByMetadataName(gcca);
+
+        if (gccaSymbol is null) {
+            context.ReportDiagnostic(Diagnostic.Create(NativeCom0001, null, gcca));
+
+            return;
+        }
+
+        // Resolve GuidAttribute to extract the target's CLSID fields.
+        const string gaa = "System.Runtime.InteropServices.GuidAttribute";
+        var gaaSymbol = compilation.GetTypeByMetadataName(gaa); // System.Runtime.InteropServices.GuidAttribute
+
+        if (gaaSymbol is null) {
+            context.ReportDiagnostic(Diagnostic.Create(NativeCom0001, null, gaa));
+
+            return;
+        }
+
         // Accumulators for generated initializer code:
         // - clsidSb: lines mapping CLSIDs to helper indices,
         // - helperSb: function pointers aligned to those indices.
         StringBuilder clsidSb = new();
         StringBuilder helperSb = new();
 
-        // Cache resolved symbols once and reuse across items.
-        INamedTypeSymbol? icfSymbol = null; // Bluehill.NativeCom.IClassFactory
-        INamedTypeSymbol? gccaSymbol = null; // System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute
-        INamedTypeSymbol? gaaSymbol = null; // System.Runtime.InteropServices.GuidAttribute
-
         for (var index = 0; index < array.Length; index++) {
-            var (innerTuple, compilation) = array[index];
-            var (factory, target) = innerTuple;
-
-            // Resolve IClassFactory by metadata name once per-compilation.
-            const string icf = "Bluehill.NativeCom.IClassFactory";
-            icfSymbol ??= compilation.GetTypeByMetadataName(icf);
-
-            if (icfSymbol is null) {
-                // Cannot proceed without IClassFactory.
-                context.ReportDiagnostic(Diagnostic.Create(NativeCom0001, factory.Locations[0], icf));
-
-                return;
-            }
+            var (factory, target) = array[index];
 
             // Ensure the factory type implements IClassFactory.
             if (!factory.Interfaces.Any(i => SymbolEqualityComparer.Default.Equals(i, icfSymbol))) {
                 context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0002", "NativeCOM", "Factory class does not implement IClassFactory",
                     DiagnosticSeverity.Error, DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
-
-                return;
-            }
-
-            // Resolve GeneratedComClassAttribute for validation of both factory and target types.
-            const string gcca = "System.Runtime.InteropServices.Marshalling.GeneratedComClassAttribute";
-            gccaSymbol ??= compilation.GetTypeByMetadataName(gcca);
-
-            if (gccaSymbol is null) {
-                context.ReportDiagnostic(Diagnostic.Create(NativeCom0001, factory.Locations[0], gcca));
 
                 return;
             }
@@ -104,16 +110,6 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
             if (!ta.Any(ad => SymbolEqualityComparer.Default.Equals(ad.AttributeClass, gccaSymbol))) {
                 context.ReportDiagnostic(Diagnostic.Create("NATIVECOM0004", "NativeCOM", "Target class does not have GeneratedComClassAttribute",
                     DiagnosticSeverity.Error, DiagnosticSeverity.Error, true, 0, location: factory.Locations[0]));
-
-                return;
-            }
-
-            // Resolve GuidAttribute to extract the target's CLSID fields.
-            const string gaa = "System.Runtime.InteropServices.GuidAttribute";
-            gaaSymbol ??= compilation.GetTypeByMetadataName(gaa);
-
-            if (gaaSymbol is null) {
-                context.ReportDiagnostic(Diagnostic.Create(NativeCom0001, factory.Locations[0], gaa));
 
                 return;
             }
