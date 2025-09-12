@@ -10,6 +10,8 @@ namespace Bluehill.NativeCom;
 /// </summary>
 public static unsafe class DllHelper {
     // ReSharper disable InconsistentNaming
+    // HRESULT indicating that input argument is invalid.
+    private const int E_INVALIDARG = unchecked((int)0x80070057);
 
     // HRESULT for "invalid pointer" — used when ppvObject is null.
     private const int E_POINTER = unchecked((int)0x80004003);
@@ -33,6 +35,65 @@ public static unsafe class DllHelper {
     private static readonly StrategyBasedComWrappers Sbcw = new();
 
     /// <summary>
+    /// Retrieves the interface pointer for a COM interface from an instance of the specified class type.
+    /// </summary>
+    /// <typeparam name="TClass">
+    /// The type of the class instance from which to retrieve the interface pointer.
+    /// This type must be annotated with the <see cref="GeneratedComClassAttribute"/>.
+    /// </typeparam>
+    /// <param name="iid">
+    /// The interface identifier (IID) of the COM interface being requested.
+    /// </param>
+    /// <param name="ptr">
+    /// When this method returns, contains the pointer to the COM interface if the operation succeeds; otherwise, <c>IntPtr.Zero</c>.
+    /// </param>
+    /// <returns>
+    /// An HRESULT indicating success or failure. Possible values include:
+    /// <list type="bullet">
+    /// <item><description><c>0</c> (S_OK) if the operation was successful.</description></item>
+    /// <item><description><c>E_INVALIDARG</c> if the specified class is not a valid COM class.</description></item>
+    /// <item><description>A standard or custom HRESULT error code if the operation fails.</description></item>
+    /// </list>
+    /// </returns>
+    public static int GetInterfacePointer<TClass>(in Guid iid, out IntPtr ptr) where TClass : class, new() {
+        ptr = IntPtr.Zero;
+
+        // Ensure the class is a source-generated COM class (must be annotated with GeneratedComClassAttribute).
+        return IsComClass<TClass>() ? GetInterfacePointerCore(new TClass(), in iid, out ptr) : E_INVALIDARG;
+    }
+
+    /// <summary>
+    /// Retrieves the interface pointer for a COM interface from an existing instance of the specified class type.
+    /// </summary>
+    /// <typeparam name="TClass">
+    /// The type of the class instance from which to retrieve the interface pointer.
+    /// This type must be annotated with the <see cref="GeneratedComClassAttribute"/>.
+    /// </typeparam>
+    /// <param name="instance">
+    /// The instance of the class from which to retrieve the COM interface pointer.
+    /// </param>
+    /// <param name="iid">
+    /// The interface identifier (IID) of the COM interface being requested.
+    /// </param>
+    /// <param name="ptr">
+    /// When this method returns, contains the pointer to the COM interface if the operation succeeds; otherwise, <c>IntPtr.Zero</c>.
+    /// </param>
+    /// <returns>
+    /// An HRESULT indicating success or failure. Possible values include:
+    /// <list type="bullet">
+    /// <item><description><c>0</c> (S_OK) if the operation was successful.</description></item>
+    /// <item><description><c>E_INVALIDARG</c> if the specified class is not a valid COM class.</description></item>
+    /// <item><description>A standard or custom HRESULT error code if the operation fails.</description></item>
+    /// </list>
+    /// </returns>
+    public static int GetInterfacePointer<TClass>(TClass instance, in Guid iid, out IntPtr ptr) where TClass : class, new() {
+        ptr = IntPtr.Zero;
+
+        // Ensure the class is a source-generated COM class (must be annotated with GeneratedComClassAttribute).
+        return IsComClass<TClass>() ? GetInterfacePointerCore(instance, in iid, out ptr) : E_INVALIDARG;
+    }
+
+    /// <summary>
     /// Creates a COM instance of the specified class type and retrieves the requested interface pointer.
     /// </summary>
     /// <typeparam name="TClass">
@@ -53,7 +114,8 @@ public static unsafe class DllHelper {
     /// <item><description><c>0</c> (S_OK) if the operation was successful.</description></item>
     /// <item><description><c>CLASS_E_NOAGGREGATION</c> if <paramref name="pUnkOuter"/> is not <c>null</c>.</description></item>
     /// <item><description><c>CLASS_E_CLASSNOTAVAILABLE</c> if the requested interface is not supported.</description></item>
-    /// <item><description><c>E_UNEXPECTED</c> if the interface or class is not properly marked or an unexpected error occurs.</description></item>
+    /// <item><description><c>E_INVALIDARG</c> if the specified class is not a valid COM class.</description></item>
+    /// <item><description><c>E_UNEXPECTED</c> if an unexpected error occurs.</description></item>
     /// </list>
     /// </returns>
     public static int CreateInstanceHelper<TClass>(void* pUnkOuter, Guid* riid, void** ppvObject) where TClass : class, new() {
@@ -78,6 +140,23 @@ public static unsafe class DllHelper {
         // Construct the managed instance that will back the COM callable wrapper (CCW).
         TClass instance = new();
 
+        // Query the CCW for the interface identified by riid.
+        // This adds a reference to the returned interface pointer on success.
+        var hr = GetInterfacePointerCore(instance, in *riid, out var ptr);
+
+        // On success, populate the caller's out pointer with the requested interface.
+        if (hr == S_OK) {
+            *ppvObject = ptr.ToPointer();
+        }
+
+        // Return the final HRESULT from QueryInterface.
+        return hr;
+    }
+
+    private static int GetInterfacePointerCore<TClass>(TClass instance, in Guid iid, out IntPtr ptr) where TClass : class, new() {
+        // Initialize out parameter to Zero
+        ptr = IntPtr.Zero;
+
         // Ask the ComWrappers to create a COM interface pointer for the managed instance.
         // This returns a primary IUnknown for the CCW.
         var ptr1 = Sbcw.GetOrCreateComInterfaceForObject(instance, CreateComInterfaceFlags.None);
@@ -89,11 +168,11 @@ public static unsafe class DllHelper {
 
         // Query the CCW for the interface identified by riid.
         // This adds a reference to the returned interface pointer on success.
-        var hr = Marshal.QueryInterface(ptr1, in *riid, out var ptr2);
+        var hr = Marshal.QueryInterface(ptr1, in iid, out var ptr2);
 
         // On success, populate the caller's out pointer with the requested interface.
         if (hr == S_OK) {
-            *ppvObject = ptr2.ToPointer();
+            ptr = ptr2;
         }
 
         // Release the temporary reference to the primary IUnknown we acquired from ComWrappers.
