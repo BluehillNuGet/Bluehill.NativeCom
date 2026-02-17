@@ -161,17 +161,7 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
                 .AppendLine("    public unsafe int CreateInstance(void* pUnkOuter, global::System.Guid* riid, void** ppvObject)")
                 .Append("        => global::Bluehill.NativeCom.DllHelper.CreateInstanceHelper<global::").Append(target.ToDisplayString(FqnFormat))
                 .AppendLine(">(pUnkOuter, riid, ppvObject);").AppendLine()
-                // Optionally generate LockServer implementation and DLL exports based on the compile-time flag.
-                .AppendLine("#if !NO_GENERATE_DLL_ENTRYPOINT_AND_LOCKSERVER")
-                .AppendLine("    public int LockServer(bool fLock) {")
-                .AppendLine("        if (fLock) {")
-                .AppendLine("            global::System.Threading.Interlocked.Increment(ref Dll.Locks);")
-                .AppendLine("        } else {")
-                .AppendLine("            global::System.Threading.Interlocked.Decrement(ref Dll.Locks);")
-                .AppendLine("        }").AppendLine()
-                .AppendLine("        return 0;")
-                .AppendLine("    }")
-                .AppendLine("#endif")
+                .AppendLine("    public int LockServer(bool fLock) => 0;")
                 .AppendLine("}");
 
             // Emit the partial factory source for the current factory type.
@@ -185,13 +175,10 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
         const string editorBrowsableNever
             = "[global::System.ComponentModel.EditorBrowsable(global::System.ComponentModel.EditorBrowsableState.Never)]";
 
-        // Guard generation with NO_GENERATE_DLL_ENTRYPOINT_AND_LOCKSERVER so consumers can opt out of DLL exports and LockServer.
-        dllSb.AppendLine("#if !NO_GENERATE_DLL_ENTRYPOINT_AND_LOCKSERVER")
-            .AppendLine(editorBrowsableNever)
+        // Guard generation with NO_GENERATE_DLLGCO so consumers can opt out of DLL exports and LockServer.
+        dllSb.AppendLine(editorBrowsableNever)
             .AppendLine("internal static unsafe class Dll {")
-            .AppendLine($"    {editorBrowsableNever}")
-            // Tracks outstanding COM locks; used by DllCanUnloadNow to return S_OK when zero.
-            .AppendLine("    public static volatile int Locks;").AppendLine()
+            .AppendLine("#if !NO_GENERATE_DLLGCO")
             // Maps CLSID to index into Helpers[].
             .AppendLine("    private static readonly global::System.Collections.Generic.Dictionary<global::System.Guid, int> Clsids = new() {")
             .Append(clsidSb)
@@ -205,11 +192,11 @@ public sealed class NativeComGenerator : IIncrementalGenerator {
             .AppendLine("    private static int DllGetClassObject(global::System.Guid* rclsid, global::System.Guid* riid, void** ppv)")
             // If CLSID not found, return CLASS_E_CLASSNOTAVAILABLE (0x80040111 -> -2147221231).
             .AppendLine("        => Clsids.TryGetValue(*rclsid, out var index) ? Helpers[index](null, riid, ppv) : -2147221231;").AppendLine()
+            .AppendLine("#endif")
             // Classic COM export indicating whether the DLL can be unloaded (S_OK if no locks, S_FALSE otherwise).
             .AppendLine("    [global::System.Runtime.InteropServices.UnmanagedCallersOnly(EntryPoint = nameof(DllCanUnloadNow))]")
-            .AppendLine("    private static int DllCanUnloadNow() => Locks <= 0 ? 0 : 1;")
-            .AppendLine("};")
-            .AppendLine("#endif");
+            .AppendLine("    private static int DllCanUnloadNow() => 1;")
+            .AppendLine("};");
 
         // Emit the Dll helper source.
         context.AddSource("Dll.g.cs", SourceText.From(dllSb.ToString(), Encoding.UTF8));

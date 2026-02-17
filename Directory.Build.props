@@ -6,8 +6,8 @@
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/na1307/Bluehill.NativeCom</RepositoryUrl>
-    <AssemblyVersion>1</AssemblyVersion>
-    <FileVersion>1.0.7</FileVersion>
-    <Version>1.0.7</Version>
+    <AssemblyVersion>2</AssemblyVersion>
+    <FileVersion>2.0.0</FileVersion>
+    <Version>2.0</Version>
   </PropertyGroup>
 </Project>
