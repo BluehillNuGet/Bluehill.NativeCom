@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="Bluehill.NativeCom.SourceGenerator.Tests/Bluehill.NativeCom.SourceGenerator.Tests.csproj" />
+  <Project Path="Bluehill.NativeCom.SourceGenerator/Bluehill.NativeCom.SourceGenerator.csproj" />
+  <Project Path="Bluehill.NativeCom/Bluehill.NativeCom.csproj" />
+</Solution>
